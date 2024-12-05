@@ -1,0 +1,1 @@
+python text_only_attack.py --model_path liuhaotian/llava-v1.5-13b

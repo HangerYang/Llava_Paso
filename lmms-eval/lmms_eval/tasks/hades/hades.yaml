@@ -1,0 +1,22 @@
+dataset_path: Monosail/HADES  # Replace with your Hugging Face dataset or custom dataset path
+dataset_kwargs:
+  token: False  # Set to False if your dataset doesn't need a token
+task: "hades"  # Unique name for your task
+test_split: test  # Specify the dataset split to evaluate on
+output_type: generate_until  # Use text generation as the output type
+doc_to_visual: null  # Set to null for text-only tasks, or provide a function name
+doc_to_text: !function utils.doc_to_text  # Function to process input for the model
+doc_to_target: null  # Specify the column name in the dataset containing the expected output
+generation_kwargs:
+  max_new_tokens: 256
+  temperature: 0.7
+  top_p: 0.9
+  num_beams: 1
+  do_sample: true
+process_results: !function utils.save_results  # Custom function to save results
+lmms_eval_specific_kwargs:
+  default:
+    pre_prompt: ""
+    post_prompt: "\nProvide a concise answer."
+metadata:
+  - version: 0.1
