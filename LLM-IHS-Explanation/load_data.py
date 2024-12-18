@@ -37,6 +37,7 @@ def load_conv(model_name, goal):
         conv.set_system_message(llama_system_prompt)
     else:
         raise ValueError("Your model is not correct")
+    goal = "<image>" + "\n" + goal
     conv.append_message(conv.roles[0], goal)
     conv.append_message(conv.roles[1], None)
     return conv.get_prompt()

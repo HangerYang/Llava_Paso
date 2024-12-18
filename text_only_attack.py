@@ -62,7 +62,7 @@ def generate(tokenizer, model, image_processor, query, image, model_name):
     #     .unsqueeze(0)
     #     .cuda()
     # )
-    input_ids = tokenizer(prompt, return_tensors="pt")["input_ids"].to("cuda:6")
+    input_ids = tokenizer(prompt, return_tensors="pt")["input_ids"]
     stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
     keywords = [stop_str]
     stopping_criteria = KeywordsStoppingCriteria(keywords, tokenizer, input_ids)

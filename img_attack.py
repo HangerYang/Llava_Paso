@@ -2,11 +2,13 @@ import torch
 import json
 import argparse
 from tqdm import tqdm
+from pdb import set_trace as breakpoint
 from datasets import load_dataset
-
+from PIL import Image
+from pdb import set_trace as breakpoint
 import sys
 sys.path.append('/home/hyang/llava_paso/LLaVA')
-
+from pdb import set_trace as breakpoint
 from llava.mm_utils import get_model_name_from_path
 from llava.constants import (
     IMAGE_TOKEN_INDEX,
@@ -15,7 +17,7 @@ from llava.constants import (
     DEFAULT_IM_END_TOKEN,
 )
 from llava.conversation import conv_templates, SeparatorStyle
-from llava.model.builder import load_pretrained_model
+from llava.model.builder import load_pretrained_model, load_pretrained_model_paper
 from llava.utils import disable_torch_init
 from llava.mm_utils import (
     tokenizer_image_token,
@@ -50,7 +52,6 @@ def generate(tokenizer, model, image_processor, query, image, model_name):
     conv.append_message(conv.roles[0], qs)
     conv.append_message(conv.roles[1], None)
     prompt = conv.get_prompt()
-
     image_tensor = (
         image_processor.preprocess(image, return_tensors="pt")["pixel_values"]
         .half()
@@ -68,6 +69,7 @@ def generate(tokenizer, model, image_processor, query, image, model_name):
     stopping_criteria = KeywordsStoppingCriteria(keywords, tokenizer, input_ids)
 
     with torch.inference_mode():
+        # breakpoint()
         output_ids = model.generate(
             input_ids,
             images=image_tensor,
@@ -91,9 +93,19 @@ def generate(tokenizer, model, image_processor, query, image, model_name):
 
 def evaluate(args):
     model_name = get_model_name_from_path(args.model_path)
-    tokenizer, model, image_processor, context_len = load_pretrained_model(
-        model_path=args.model_path, model_base=None, model_name=model_name,cache_dir = "/home/hyang/llava_paso/.cache"
-    )
+    if args.projector_only:
+        projector_state_dict = torch.load(args.projector_path)
+        tokenizer, model, image_processor, context_len = load_pretrained_model_paper(
+            model_path=args.model_path,
+            model_base="lmsys/vicuna-7b-v1.5",
+            model_name=get_model_name_from_path("llava"),
+            projector_state_dict=projector_state_dict, 
+            cache_dir="/home/hyang/llava_paso/.cache")
+    else:
+        tokenizer, model, image_processor, context_len = load_pretrained_model(
+            model_path=args.model_path, model_base=None, model_name=model_name,cache_dir = "/home/hyang/llava_paso/.cache"
+            )
+    # breakpoint()
     # bin_path = "/home/hyang/llava_paso/mm_projector.bin"
     # weights = torch.load(bin_path, map_location=torch.device('cpu'))
     # model_state_dict = model.state_dict()
@@ -109,7 +121,10 @@ def evaluate(args):
         test_split = hades    
     
     for item in tqdm(test_split):
-        image = item['image'].convert('RGB')
+        if args.blank_img:
+            image = Image.open("/home/hyang/llava_paso/blank_white_image.png")
+        else:
+            image = item['image'].convert('RGB')
         inst = item['instruction']
 
         if item["category"] == "behavior":
@@ -133,7 +148,7 @@ def evaluate(args):
             "instruction": item['instruction'],
             "response": response
         }
-        with open(args.output_path + model_name + "img", "a") as f:
+        with open(args.output_path + model_name + "imgblank", "a") as f:
             f.write(json.dumps(result) + "\n")
 
 
@@ -141,10 +156,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_path", type=str, default="Monosail/HADES")
     parser.add_argument("--model_path", type=str, default="liuhaotian/llava-v1.5-7b")
+    parser.add_argument("--projector_path", type=str, default=None)
     parser.add_argument("--output_path", type=str, default="/home/hyang/llava_paso/output/")
     parser.add_argument("--ensure_accurate_OCR", type=bool, default=True) # whether to ensure the MLLM identifies the words written in the image
     parser.add_argument("--max_attempts", type=int, default=5) # maximum attempts for MLLMs to identify the words
     parser.add_argument("--step", type=str, default="last")  # evaluate MLLM on last-step images or all images
+    parser.add_argument("--projector_only", action="store_true", help="When only projector weight is input")
+    parser.add_argument("--blank_img", action="store_true", help="blank image")
+
     args = parser.parse_args()
 
     evaluate(args)

@@ -17,7 +17,7 @@ from abc import ABC, abstractmethod
 
 import torch
 import torch.nn as nn
-
+from pdb import set_trace as breakpoint
 from .multimodal_encoder.builder import build_vision_tower
 from .multimodal_projector.builder import build_vision_projector
 
@@ -257,6 +257,7 @@ class LlavaMetaForCausalLM(ABC):
                 cur_new_input_embeds.append(cur_input_embeds_no_im[i])
                 cur_new_labels.append(cur_labels_noim[i])
                 if i < num_images:
+                    # breakpoint()
                     cur_image_features = image_features[cur_image_idx]
                     cur_image_idx += 1
                     cur_new_input_embeds.append(cur_image_features)
