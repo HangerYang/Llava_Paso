@@ -6,3 +6,4 @@
 *.json
 *.pyc
 *.parquet
+*.bin
