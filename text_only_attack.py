@@ -3,7 +3,7 @@ import json
 import argparse
 from tqdm import tqdm
 from datasets import load_dataset
-
+from pdb import set_trace as breakpoint
 import sys
 sys.path.append('/home/hyang/llava_paso/LLaVA')
 
@@ -26,16 +26,16 @@ from llava.mm_utils import (
 
 def generate(tokenizer, model, image_processor, query, image, model_name):
     qs = query
-    if model.config.mm_use_im_start_end:
-        qs = (
-            DEFAULT_IM_START_TOKEN
-            + DEFAULT_IMAGE_TOKEN
-            + DEFAULT_IM_END_TOKEN
-            + "\n"
-            + qs
-        )
-    else:
-        qs = DEFAULT_IMAGE_TOKEN + "\n" + qs
+    # if model.config.mm_use_im_start_end:
+    #     qs = (
+    #         DEFAULT_IM_START_TOKEN
+    #         + DEFAULT_IMAGE_TOKEN
+    #         + DEFAULT_IM_END_TOKEN
+    #         + "\n"
+    #         + qs
+    #     )
+    # else:
+    #     qs = DEFAULT_IMAGE_TOKEN + "\n" + qs
 
     if "llama-2" in model_name.lower():
         conv_mode = "llava_llama_2"
@@ -57,15 +57,12 @@ def generate(tokenizer, model, image_processor, query, image, model_name):
     #     .cuda()
     # )
 
-    # input_ids = (
-    #     tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt")
-    #     .unsqueeze(0)
-    #     .cuda()
-    # )
+    # input_ids = (tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).cuda())
     input_ids = tokenizer(prompt, return_tensors="pt")["input_ids"]
     stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
     keywords = [stop_str]
     stopping_criteria = KeywordsStoppingCriteria(keywords, tokenizer, input_ids)
+    # breakpoint()
 
     with torch.inference_mode():
         output_ids = model.generate(
@@ -133,15 +130,15 @@ def evaluate(args):
             "instruction": item['instruction'],
             "response": response
         }
-        with open(args.output_path + model_name, "a") as f:
+        with open(args.output_path + ".json", "a") as f:
             f.write(json.dumps(result) + "\n")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_path", type=str, default="Monosail/HADES")
-    parser.add_argument("--model_path", type=str, default="liuhaotian/llava-v1.5-7b")
-    parser.add_argument("--output_path", type=str, default="/home/hyang/llava_paso/output_llm/")
+    parser.add_argument("--model_path", type=str, default="lmsys/vicuna-7b-v1.5")
+    parser.add_argument("--output_path", type=str, default="/home/hyang/llava_paso/trial")
     parser.add_argument("--ensure_accurate_OCR", type=bool, default=True) # whether to ensure the MLLM identifies the words written in the image
     parser.add_argument("--max_attempts", type=int, default=5) # maximum attempts for MLLMs to identify the words
     parser.add_argument("--step", type=str, default="last")  # evaluate MLLM on last-step images or all images

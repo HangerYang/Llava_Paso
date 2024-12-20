@@ -3,23 +3,41 @@ import json
 import argparse
 from tqdm import tqdm
 from datasets import load_dataset
-
+from pdb import set_trace as breakpoint
 from transformers import AutoTokenizer, AutoModelForCausalLM
-
+import sys
+sys.path.append('/home/hyang/llava_paso/LLaVA')
+from llava.conversation import conv_templates, SeparatorStyle
+from llava.mm_utils import (
+    tokenizer_image_token,
+    get_model_name_from_path,
+    KeywordsStoppingCriteria,
+)
 
 def generate(tokenizer, model, query, max_attempts, keywords):
     """
     Generate a response from the language model with retry logic to ensure keywords are in the response.
     """
+   
+    conv_mode = "llava_v1"
+    conv = conv_templates[conv_mode].copy()
+    conv.append_message(conv.roles[0], query)
+    conv.append_message(conv.roles[1], None)
+    prompt = conv.get_prompt()
     for attempt in range(max_attempts):
-        input_ids = tokenizer(query, return_tensors="pt")["input_ids"].cuda()
+        input_ids = tokenizer(prompt, return_tensors="pt")["input_ids"]
+        input_ids = input_ids.to(next(model.parameters()).device)  # Match device
+        stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
+        keywords = [stop_str]
+        stopping_criteria = KeywordsStoppingCriteria(keywords, tokenizer, input_ids)
         with torch.inference_mode():
             output_ids = model.generate(
                 input_ids,
                 do_sample=True,
-                temperature=0.7,
+                temperature=0.2,
                 max_new_tokens=1024,
                 use_cache=True,
+                stopping_criteria=[stopping_criteria],
             )
 
         input_token_len = input_ids.shape[1]
@@ -27,8 +45,7 @@ def generate(tokenizer, model, query, max_attempts, keywords):
             output_ids[:, input_token_len:], skip_special_tokens=True
         )[0]
         outputs = outputs.strip()
-        
-        if not keywords or keywords in outputs:
+        if not keywords or keywords[0] in outputs:
             return outputs
 
     # If we exhausted max_attempts without success
@@ -57,8 +74,9 @@ def evaluate(args):
 
     print("Starting evaluation...")
     for item in tqdm(test_split):
+        # breakpoint()
         inst = item["instruction"]
-        keywords = item.get("keywords", None)
+        keywords = item["keywords"]
 
         # Generate a response
         response = generate(tokenizer, model, inst, args.max_attempts, keywords)
@@ -76,7 +94,7 @@ def evaluate(args):
         results.append(result)
 
         # Save result to file incrementally
-        with open(args.output_path + "results.jsonl", "a") as f:
+        with open(args.output_path + ".json", "a") as f:
             f.write(json.dumps(result) + "\n")
 
     print("Evaluation complete.")
@@ -86,7 +104,7 @@ def evaluate(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_path", type=str, default="Monosail/HADES")
-    parser.add_argument("--model_path", type=str, default="gpt2")  # Specify any LM model here
+    parser.add_argument("--model_path", type=str, default="lmsys/vicuna-7b-v1.5")  # Specify any LM model here
     parser.add_argument("--output_path", type=str, default="./output/")
     parser.add_argument("--ensure_accurate_OCR", type=bool, default=False)  # Placeholder, no OCR required
     parser.add_argument("--max_attempts", type=int, default=5)  # Retry attempts to match keywords

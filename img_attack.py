@@ -5,10 +5,9 @@ from tqdm import tqdm
 from pdb import set_trace as breakpoint
 from datasets import load_dataset
 from PIL import Image
-from pdb import set_trace as breakpoint
 import sys
+from huggingface_hub import hf_hub_download
 sys.path.append('/home/hyang/llava_paso/LLaVA')
-from pdb import set_trace as breakpoint
 from llava.mm_utils import get_model_name_from_path
 from llava.constants import (
     IMAGE_TOKEN_INDEX,
@@ -94,13 +93,21 @@ def generate(tokenizer, model, image_processor, query, image, model_name):
 def evaluate(args):
     model_name = get_model_name_from_path(args.model_path)
     if args.projector_only:
+        # projector_state_dict = torch.load(args.projector_path)
+        # projector_path = hf_hub_download(
+        #     repo_id="liuhaotian/llava-v1.5-mlp2x-336px-pretrain-vicuna-7b-v1.5",
+        #     filename="mm_projector.bin"
+        # )
         projector_state_dict = torch.load(args.projector_path)
+
+        # breakpoint()
         tokenizer, model, image_processor, context_len = load_pretrained_model_paper(
             model_path=args.model_path,
             model_base="lmsys/vicuna-7b-v1.5",
-            model_name=get_model_name_from_path("llava"),
+            model_name=get_model_name_from_path("llava_lora"),
             projector_state_dict=projector_state_dict, 
             cache_dir="/home/hyang/llava_paso/.cache")
+        # model = model.to(dtype=torch.bfloat16)
     else:
         tokenizer, model, image_processor, context_len = load_pretrained_model(
             model_path=args.model_path, model_base=None, model_name=model_name,cache_dir = "/home/hyang/llava_paso/.cache"
@@ -148,16 +155,16 @@ def evaluate(args):
             "instruction": item['instruction'],
             "response": response
         }
-        with open(args.output_path + model_name + "imgblank", "a") as f:
+        with open(args.output_path + ".json", "a") as f:
             f.write(json.dumps(result) + "\n")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_path", type=str, default="Monosail/HADES")
-    parser.add_argument("--model_path", type=str, default="liuhaotian/llava-v1.5-7b")
-    parser.add_argument("--projector_path", type=str, default=None)
-    parser.add_argument("--output_path", type=str, default="/home/hyang/llava_paso/output/")
+    parser.add_argument("--model_path", type=str, default="/home/hyang/llava_paso/LLaVA/llava/RLHF/results/dpo_lora/checkpoint-999/adapter_model/lora_policy")
+    parser.add_argument("--projector_path", type=str, default="/home/hyang/llava_paso/LLaVA/llava/RLHF/results/dpo_lora/checkpoint-999/mm_projector.bin")
+    parser.add_argument("--output_path", type=str, default="/home/hyang/llava_paso/trial")
     parser.add_argument("--ensure_accurate_OCR", type=bool, default=True) # whether to ensure the MLLM identifies the words written in the image
     parser.add_argument("--max_attempts", type=int, default=5) # maximum attempts for MLLMs to identify the words
     parser.add_argument("--step", type=str, default="last")  # evaluate MLLM on last-step images or all images
