@@ -46,13 +46,61 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         self.pretraining_tp = config.pretraining_tp
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
-
+        self.ema_losses = {}
         # Initialize weights and apply final processing
         self.post_init()
 
     def get_model(self):
         return self.model
+    
 
+    def update_ema(self, curr_loss, loss_type, alpha=0.1, epsilon=1e-8):
+        curr_loss = curr_loss.detach()
+        if loss_type not in self.ema_losses:
+            # Initialize the EMA for this loss type if not present.
+            self.ema_losses[loss_type] = curr_loss
+            print(f"Initializing EMA for {loss_type} loss: {curr_loss}")
+        else:
+            old_val = self.ema_losses[loss_type]
+            if curr_loss > old_val:
+                new_val = alpha * curr_loss + (1 - alpha) * old_val
+            else:
+                new_val = (1 - alpha) * old_val
+            self.ema_losses[loss_type] = new_val
+        
+        return self.ema_losses[loss_type] + epsilon
+    def compute_l2_loss(self, tensor, num_image_embeddings=576, image_start_idx=None):
+            """
+            Computes the L2-based loss between image and text embeddings in the batch.
+            
+            Args:
+                tensor: Tensor of shape [batch_size, num_embedding_vectors, 4096]
+                num_image_embeddings: Number of image embeddings per batch element (default: 576)
+                sample_size: Number of image embeddings to sample (default: 100)
+                
+            Returns:
+                L2 loss (scalar)
+            """
+            # breakpoint()
+            image_start_idx = image_start_idx.tolist()
+            batch_size = tensor.size(0)
+            loss = torch.tensor(0.0, device=tensor.device)
+            for b in range(batch_size):
+                start_idx = image_start_idx[b]
+                image_embeddings = tensor[b, start_idx:start_idx+num_image_embeddings, :]  # Shape: [576, 4096]
+                text_embeddings = tensor[b, start_idx+num_image_embeddings:, :]   # Shape: [num_text_embeddings, 4096]
+                
+                # randomly sample 100 image embeds
+                # sampled_indices = torch.randperm(num_image_embeddings)[:sample_size]
+                # sampled_image_embeddings = image_embeddings[sampled_indices]  # Shape: [100, 4096]
+                
+                # Compute pairwise L2 distances
+                distances = torch.cdist(image_embeddings, text_embeddings, p=2)
+                loss += distances.sum()
+
+            # Average the loss over the batch size
+            loss = loss / batch_size
+            return loss
     def forward(
         self,
         input_ids: torch.LongTensor = None,
@@ -69,6 +117,7 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         image_start_idx = torch.where(input_ids == IMAGE_TOKEN_INDEX)[1]
+        # breakpoint()
         if inputs_embeds is None:
             (
                 input_ids,
@@ -125,13 +174,18 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
             # Enable model parallelism
             shift_labels = shift_labels.to(shift_logits.device)
             loss = loss_fct(shift_logits, shift_labels)
-
+        sim_loss_coeff = 0.1
+        original_sim_loss = self.compute_l2_loss(inputs_embeds, image_start_idx=image_start_idx)
+        max_sim = self.update_ema(original_sim_loss, "sim")
+        normalized_sim_loss = sim_loss_coeff * (original_sim_loss / max_sim)
+        normalized_util_loss = loss / self.update_ema(loss, "util")
+        total_loss = normalized_sim_loss + normalized_util_loss
         if not return_dict:
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
 
         return CausalLMOutputWithPast(
-            loss=loss,
+            loss=total_loss,
             logits=logits,
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states,
