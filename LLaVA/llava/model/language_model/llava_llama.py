@@ -62,10 +62,7 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
             print(f"Initializing EMA for {loss_type} loss: {curr_loss}")
         else:
             old_val = self.ema_losses[loss_type]
-            if curr_loss > old_val:
-                new_val = alpha * curr_loss + (1 - alpha) * old_val
-            else:
-                new_val = (1 - alpha) * old_val
+            new_val = alpha * curr_loss + (1 - alpha) * old_val
             self.ema_losses[loss_type] = new_val
         
         return self.ema_losses[loss_type] + epsilon
@@ -117,7 +114,6 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         image_start_idx = torch.where(input_ids == IMAGE_TOKEN_INDEX)[1]
-        # breakpoint()
         if inputs_embeds is None:
             (
                 input_ids,
@@ -149,7 +145,7 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
             inputs_embeds=inputs_embeds,
             use_cache=use_cache,
             output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
+            output_hidden_states=True,
             return_dict=return_dict,
         )
 
@@ -177,9 +173,19 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         sim_loss_coeff = 0.1
         original_sim_loss = self.compute_l2_loss(inputs_embeds, image_start_idx=image_start_idx)
         max_sim = self.update_ema(original_sim_loss, "sim")
+        training_list = [0, 4, 8, 12, 16, 20, 24, 28, 32]
+        output_hidden_states = [x.detach() for x in outputs.hidden_states]
+        total_normalized_hidden_loss= torch.tensor(0.0, device=output_hidden_states[0].device)
+        # for i in training_list:
+        #     hidden_states_loss = self.compute_l2_loss(output_hidden_states[i], image_start_idx=image_start_idx)
+        #     max_hidden = self.update_ema(hidden_states_loss, f"hidden_{i}")
+        #     total_normalized_hidden_loss += hidden_states_loss/max_hidden
+        # total_normalized_hidden_loss = sim_loss_coeff * total_normalized_hidden_loss
+        
         normalized_sim_loss = sim_loss_coeff * (original_sim_loss / max_sim)
         normalized_util_loss = loss / self.update_ema(loss, "util")
-        total_loss = normalized_sim_loss + normalized_util_loss
+        total_loss = normalized_sim_loss + normalized_util_loss + total_normalized_hidden_loss
+        # breakpoint()
         if not return_dict:
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
